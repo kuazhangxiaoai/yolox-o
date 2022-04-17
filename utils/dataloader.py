@@ -457,10 +457,10 @@ class DotaDataset(Dataset):
 
     def __getitem__(self, index):
         img, target = self.pull_item(index)
-        img, target = self.postpreprocessing(img, target)
+        img, target = self.postprocessing(img, target)
         return img, target
 
-    def postpreprocessing(self, image, targets, flip_prob=0.5, hsv_prob=1.0):
+    def postprocessing(self, image, targets, flip_prob=0.5, hsv_prob=1.0):
         boxes = targets[:, :-1].copy()
         labels = targets[:, -1].copy()
         if not ((image.shape[0] == self.img_size[0]) and (image.shape[1] == self.img_size[1])):
@@ -474,6 +474,15 @@ class DotaDataset(Dataset):
 
         if random.random() < self.hsv_prob:
             image = augment_hsv(image)
+        #TODO : Mosaic and mixup
+        if self.name == 'train':
+            if random.random() < self.mosaic_ratio:
+                mosaic_labels = []
+                input_h, input_w = self.img_size[0], self.img_size[1]
+                yc = int(random.uniform(0.25 * input_h, 0.75 * input_h))
+                xc = int(random.uniform(0.25 * input_w, 0.75 * input_w))
+
+
         height, width, _ = image.shape
         boxes = xyxy2cxcywhab(boxes)
 
