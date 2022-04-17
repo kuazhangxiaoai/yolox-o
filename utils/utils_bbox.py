@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torchvision.ops import nms, boxes
+import cv2
 
 def yolo_correct_boxes(box_xy, box_wh, input_shape, image_shape, letterbox_image):
     #-----------------------------------------------------------------#
@@ -178,3 +179,21 @@ def non_max_suppression(prediction, num_classes, input_shape, image_shape, lette
             box_xy, box_wh      = (output[i][:, 0:2] + output[i][:, 2:4])/2, output[i][:, 2:4] - output[i][:, 0:2]
             output[i][:, :4]    = yolo_correct_boxes(box_xy, box_wh, input_shape, image_shape, letterbox_image)
     return output
+
+def xyxy2cxcywhab(bboxes):
+    for i, poly in enumerate(bboxes):
+        poly = np.float32(poly.reshape(4,2))
+        rect = cv2.minAreaRect(poly)
+        bboxes[i] = cv2.boxPoints(rect).reshape(-1)
+    boxes_num = bboxes.shape[0]
+    new_boxes = np.zeros([boxes_num, 6],dtype=bboxes.dtype)
+    xs, ys = bboxes[:, 0::2], bboxes[:, 1::2]
+    x_min, x_max = xs.min(axis=1), xs.max(axis=1)
+    y_min, y_max = ys.min(axis=1), ys.max(axis=1)
+    new_boxes[:, 0], new_boxes[:, 1] = (x_min + x_max) * 0.5, (y_min + y_max) * 0.5 # get cx and cy
+    new_boxes[:, 2], new_boxes[:, 3] = (x_max - x_min), (y_max - y_min)             # get width and height
+    x_min_index, x_max_index = np.argmin(xs, axis=1), np.argmax(xs, axis=1)
+    y_min_index, y_max_index = np.argmin(ys, axis=1), np.argmax(ys, axis=1)
+    new_boxes[:, 4] = xs[np.arange(boxes_num),y_min_index] - x_min                  #get alpha
+    new_boxes[:, 5]  = y_max - ys[np.arange(boxes_num),x_max_index]                 # get beta
+    return new_boxes

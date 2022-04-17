@@ -9,7 +9,9 @@ from PIL import Image
 from torch.utils.data.dataset import Dataset
 
 #from utils.utils import cvtColor, preprocess_input
-from utils.comment import cvtColor, preprocess_input
+from utils.comment import cvtColor, preprocess_input, letterbox
+from utils.utils_bbox import xyxy2cxcywhab
+from DOTA_devkit import dota_utils
 
 dotav10_classes = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field', 'small-vehicle',
                 'large-vehicle', 'ship', 'tennis-court', 'basketball-court', 'storage-tank',
@@ -20,6 +22,25 @@ dotav15_classes = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field', 
                 'soccer-ball-field', 'roundabout', 'harbor', 'swimming-pool', 'helicopter',
                 'container-crane']
 
+def _mirror(image, boxes, prob=0.5): #the format of boexes must be xyxy
+    _, width, _ = image.shape
+    if random.random() < prob:
+        image = image[:, ::-1]
+        boxes[:, 0::2] = width - boxes[:, 0::2]
+    return image, boxes
+
+
+def augment_hsv(img, hgain=5, sgain=30, vgain=30):
+    hsv_augs = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain]  # random gains
+    hsv_augs *= np.random.randint(0, 2, 3)  # random selection of h, s, v
+    hsv_augs = hsv_augs.astype(np.int16)
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.int16)
+
+    img_hsv[..., 0] = (img_hsv[..., 0] + hsv_augs[0]) % 180
+    img_hsv[..., 1] = np.clip(img_hsv[..., 1] + hsv_augs[1], 0, 255)
+    img_hsv[..., 2] = np.clip(img_hsv[..., 2] + hsv_augs[2], 0, 255)
+    # no return needed
+    return cv2.cvtColor(img_hsv.astype(img.dtype), code=cv2.COLOR_HSV2BGR)
 
 class YoloDataset(Dataset):
     def __init__(self, annotation_lines, input_shape, num_classes, epoch_length, mosaic, train, mosaic_ratio = 0.7):
@@ -406,7 +427,7 @@ class DotaDataset(Dataset):
         for obj in objects:
             class_id = self.class_id[obj['name']]
             poly = obj['poly']
-            targets.append([0] + poly + [class_id])
+            targets.append(poly + [class_id])
         return np.array([targets])
 
     def load_resized_img(self, index):
@@ -419,10 +440,57 @@ class DotaDataset(Dataset):
         ).astype(np.uint8)
         return resized_img
 
+    def pull_item(self, index):
+        img = self.load_image(index)
+
+        ann_file = self.labels_file[index]
+        objects = dota_utils.parse_dota_poly2(ann_file)
+        targets = []
+        for obj in objects:
+            class_id = self.class_id[obj['name']]
+            poly = obj['poly']
+            targets.append(poly + [class_id])
+        res = np.array(targets)
+
+        # self.draw(img, res)
+        return img, res.copy()
+
+    def __getitem__(self, index):
+        img, target = self.pull_item(index)
+        img, target = self.postpreprocessing(img, target)
+        return img, target
+
+    def postpreprocessing(self, image, targets, flip_prob=0.5, hsv_prob=1.0):
+        boxes = targets[:, :-1].copy()
+        labels = targets[:, -1].copy()
+        if not ((image.shape[0] == self.img_size[0]) and (image.shape[1] == self.img_size[1])):
+            image, scale, (dw, dh) = letterbox(image, self.img_size)
+            boxes = boxes.astype(np.float64)
+            boxes *= scale[0]
+            boxes[:, ::2] += dw
+            boxes[:, 1::2] += dh
+        image_o = image.copy()
+        height_o, width_o, _ = image_o.shape
+
+        if random.random() < self.hsv_prob:
+            image = augment_hsv(image)
+        height, width, _ = image.shape
+        boxes = xyxy2cxcywhab(boxes)
+
+        mask_b = np.minimum(boxes[:, 2], boxes[:, 3]) > 1
+        boxes_t = boxes[mask_b]
+        labels_t = labels[mask_b]
+        labels_t = np.expand_dims(labels_t, 1)
+
+        targets_t = np.hstack((boxes_t, labels_t))
+        image = image.transpose((2, 0, 1))  # from channel-last to channel-first
+        return image, targets_t
 
 
 
 if __name__ == '__main__':
-    ds = DotaDataset(name='train', data_dir='/home/yanggang/diskPoints/work2/DOTA_SPLIT', img_size=(1024,1024))
-
+    train_dataset = DotaDataset(name='train', data_dir='/home/yanggang/diskPoints/work2/DOTA_SPLIT', img_size=(1024,1024))
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, collate_fn=yolo_dataset_collate, drop_last=True)
+    for i, (imgs, targets) in enumerate(train_dataloader):
+        print(imgs.shape)
 

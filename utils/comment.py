@@ -1,6 +1,6 @@
 import numpy as np
 from PIL import Image
-
+import cv2
 
 #---------------------------------------------------------#
 #   将图像转换成RGB图像，防止灰度图在预测时报错。
@@ -52,3 +52,32 @@ def preprocess_input(image):
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
+
+
+def letterbox(self, img, new_shape=(1024,1024), color=(114,114,114),auto=False, scaleFill=False, scale_up=True, stride=32):
+        shape = img.shape[:2]
+        if isinstance(new_shape, int):
+            new_shape = (new_shape, new_shape)
+        r = min(new_shape[0] / shape[0], new_shape[1] /  shape[1])
+        if not scale_up:
+            r = min(r, 1.0)
+        radio = r, r
+        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+        dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]
+
+        if auto:
+            dh, dw = np.mod(dh, stride), np.mod(dw, stride)
+        elif scaleFill:
+            dh, dw = 0.0, 0.0
+            new_unpad = (new_shape[1], new_shape[0])
+            radio = new_shape[1]/shape[1], new_shape[0]/shape[0]
+
+        dw /= 2
+        dh /= 2
+        if shape[::-1] != new_unpad:
+            img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+
+        im = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+        return im, radio, (dw, dh)
