@@ -1,12 +1,24 @@
 from random import sample, shuffle
 
 import cv2
+import os
 import numpy as np
+import random
 import torch
 from PIL import Image
 from torch.utils.data.dataset import Dataset
 
-from utils.utils import cvtColor, preprocess_input
+#from utils.utils import cvtColor, preprocess_input
+from utils.comment import cvtColor, preprocess_input
+
+dotav10_classes = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field', 'small-vehicle',
+                'large-vehicle', 'ship', 'tennis-court', 'basketball-court', 'storage-tank',
+                'soccer-ball-field', 'roundabout', 'harbor', 'swimming-pool', 'helicopter']
+
+dotav15_classes = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field', 'small-vehicle',
+                'large-vehicle', 'ship', 'tennis-court', 'basketball-court', 'storage-tank',
+                'soccer-ball-field', 'roundabout', 'harbor', 'swimming-pool', 'helicopter',
+                'container-crane']
 
 
 class YoloDataset(Dataset):
@@ -355,3 +367,62 @@ def yolo_dataset_collate(batch):
     images = torch.from_numpy(np.array(images)).type(torch.FloatTensor)
     bboxes = [torch.from_numpy(ann).type(torch.FloatTensor) for ann in bboxes]
     return images, bboxes
+
+
+class DotaDataset(Dataset):
+    def __init__(self, name, data_dir, img_size, num_classes=16, mosaic=True, mosaic_ratio = 0.7):
+        super(DotaDataset, self).__init__()
+        self.name = name
+        self.data_dir = data_dir
+        self.img_size = img_size
+        self.labels_dir = os.path.join(data_dir, name, 'labelTxt')
+        self.imgs_dir = os.path.join(data_dir, name, 'images')
+        self.num_classes = num_classes
+        self.mosaic = mosaic
+        self.labels_file = [files for root, dirs, files in os.walk(self.labels_dir)]
+        self.labels_file = [os.path.join(self.labels_dir, file) for file in self.labels_file[0]]
+        self.imgs_file = [file.replace('labelTxt', 'images').replace('.txt', '.png') for file in self.labels_file]
+        assert len(self.labels_file) == len(self.imgs_file)
+        self.imgs_num = len(self.imgs_file)
+        self.class_id = {}
+        for i, cls in enumerate(dotav15_classes):
+            self.class_id[cls] = i
+
+        self.ids = [i for i in range(len(self.labels_file))]
+        random.shuffle(self.ids)
+        self.mosaic_ratio = mosaic_ratio
+        self.epoch_now = -1
+
+    def __len__(self):
+        return self.imgs_num
+
+    def load_image(self, index):
+        return cv2.imread(self.imgs_file[index])
+
+    def load_anno(self, index):
+        ann_file = self.labels_file[index]
+        objects = dota_utils.parse_dota_poly2(ann_file)
+        targets = []
+        for obj in objects:
+            class_id = self.class_id[obj['name']]
+            poly = obj['poly']
+            targets.append([0] + poly + [class_id])
+        return np.array([targets])
+
+    def load_resized_img(self, index):
+        img = self.load_image(index)
+        r = min(self.img_size[0] / img.shape[0], self.img_size[1] / img.shape[1])
+        resized_img = cv2.resize(
+            img,
+            (int(img.shape[1] * r), int(img.shape[0] * r)),
+            interpolation=cv2.INTER_LINEAR,
+        ).astype(np.uint8)
+        return resized_img
+
+
+
+
+if __name__ == '__main__':
+    ds = DotaDataset(name='train', data_dir='/home/yanggang/diskPoints/work2/DOTA_SPLIT', img_size=(1024,1024))
+
+

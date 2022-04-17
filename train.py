@@ -16,7 +16,7 @@ from nets.yolo_training import (YOLOLoss, get_lr_scheduler, set_optimizer_lr,
                                 weights_init)
 from utils.callbacks import LossHistory
 from utils.dataloader import YoloDataset, yolo_dataset_collate
-from utils.utils import get_classes
+from utils.comment import get_classes
 from utils.utils_fit import fit_one_epoch
 
 '''

@@ -5,7 +5,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from yolo import YOLO
-from utils.utils import get_classes
+from utils.comment import get_classes
 from utils.utils_map import get_coco_map, get_map
 
 if __name__ == "__main__":

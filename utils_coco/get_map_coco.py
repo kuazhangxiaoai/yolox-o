@@ -7,7 +7,7 @@ from PIL import Image
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from tqdm import tqdm
-from utils.utils import cvtColor, get_classes, preprocess_input, resize_image
+from utils.comment import cvtColor, get_classes, preprocess_input, resize_image
 from utils.utils_bbox import decode_outputs, non_max_suppression
 from yolo import YOLO
 
