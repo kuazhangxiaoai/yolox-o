@@ -49,6 +49,18 @@ def _mirror(image, boxes, prob=0.5): #the format of boexes must be xyxy
         boxes[:, 0::2] = width - boxes[:, 0::2]
     return image, boxes
 
+def drawOneImg(img, label, save_path=False):
+    pts = label[:, : -1]
+    for i, poly in enumerate(pts):
+        poly = poly.reshape([4,2]).astype(np.int32)
+        cv2.polylines(img, [poly], isClosed=True, color=(0,0,255), thickness=2)
+
+    if save_path:
+        cv2.imwrite(save_path, img)
+    else:
+        cv2.namedWindow("image", 0)
+        cv2.imshow("image", img)
+        cv2.waitKey()
 
 def augment_hsv(img, hgain=5, sgain=30, vgain=30):
     hsv_augs = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain]  # random gains
@@ -512,8 +524,8 @@ class DotaDataset(Dataset):
             mosaic_labels = []
             input_h, input_w = self.img_size[0], self.img_size[1]
 
-            yc = int(random.uniform(0.5 * input_h, 1.5 * input_h))
-            xc = int(random.uniform(0.5 * input_w, 1.5 * input_w))
+            yc = int(random.uniform(0.75 * input_h, 1.25 * input_h))
+            xc = int(random.uniform(0.75 * input_w, 1.25 * input_w))
 
             indices = [index] + [random.randint(0, self.imgs_num - 1) for _ in range(3)]
 
@@ -546,14 +558,15 @@ class DotaDataset(Dataset):
                 mosaic_img,
                 mosaic_labels,
                 target_size=(input_w, input_h),
-                degrees=self.degrees,
+                degrees=0.0,
                 translate=self.translate,
-                scales=self.scale,
+                scales=(0.1, 2.0),
                 shear=self.shear,
                 oriented=True
             )
-            if random.random() < self.mixup_prob:
-                mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
+            #if random.random() < self.mixup_prob:
+            #    mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
+            drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic.png")
             return mosaic_img, mosaic_labels
 
         else:
@@ -568,7 +581,7 @@ class DotaDataset(Dataset):
 
 if __name__ == '__main__':
     train_dataset = DotaDataset(name='train', data_dir='/home/yanggang/data/DOTA_SPLIT', img_size=(1024,1024))
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, collate_fn=yolo_dataset_collate, drop_last=True)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=yolo_dataset_collate, drop_last=True)
     for i, (imgs, targets) in enumerate(train_dataloader):
         print(f"batch {i} : {imgs.shape}")
 
