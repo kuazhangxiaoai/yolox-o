@@ -494,8 +494,6 @@ class DotaDataset(Dataset):
 
     def mixup(self, origin_img, origin_labels):
         r = np.random.beta(32.0, 32.0)
-        HFLIP = random.uniform(0, 1) > 0.5
-        VFLIP = random.uniform(0, 1) > 0.5
         cp_index = random.randint(0, self.__len__() - 1)
         cp_img, cp_labels = self.pull_item(cp_index)
         if cp_img.shape != origin_img.shape:
@@ -504,19 +502,10 @@ class DotaDataset(Dataset):
             cp_labels[:, 1:-1:2] = scale[0] * cp_labels[:, 1:-1:2]
             cp_labels[:, 0:-1:2] += int(padw)
             cp_labels[:, 1:-1:2] += int(padh)
-            # drawOneImg(cp_img, cp_labels)
-        width, height = cp_img.shape[0], cp_img.shape[1]
-
-        if HFLIP:  # horizontal flip
-            cp_img = cp_img[:, ::-1, :].copy()
-            cp_labels[:, 1:-1:2] = width - cp_labels[:, 1:-1:2]
-        if VFLIP:  # vertical flip
-            cp_img = cp_img[::-1, :, :].copy()
-            cp_labels[:, 2:-1:2] = height - cp_labels[:, 2:-1:2]
 
         img = (origin_img * r + (1 - r) * cp_img).astype(np.uint8)
         labels = np.concatenate((origin_labels, cp_labels), 0)
-        # draw(img, labels, origin_img, origin_labels,cp_img, cp_labels)
+
         return img, labels
 
     def __getitem__(self, index):
