@@ -3,7 +3,7 @@ import os
 import torch
 from tqdm import tqdm
 
-from utils.comment import get_lr
+from utils.common import get_lr
 
 
 def fit_one_epoch(model_train, model, yolo_loss, loss_history, optimizer, epoch, epoch_step, epoch_step_val, gen, gen_val, Epoch, cuda, fp16, scaler, save_period, save_dir, local_rank=0):

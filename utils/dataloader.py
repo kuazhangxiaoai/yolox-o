@@ -9,7 +9,7 @@ from PIL import Image
 from torch.utils.data.dataset import Dataset
 
 #from utils.utils import cvtColor, preprocess_input
-from utils.comment import cvtColor, preprocess_input, letterbox
+from utils.common import cvtColor, preprocess_input, letterbox, mixup, random_affine
 from utils.utils_bbox import xyxy2cxcywhab
 from DOTA_devkit import dota_utils
 
@@ -21,6 +21,26 @@ dotav15_classes = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field', 
                 'large-vehicle', 'ship', 'tennis-court', 'basketball-court', 'storage-tank',
                 'soccer-ball-field', 'roundabout', 'harbor', 'swimming-pool', 'helicopter',
                 'container-crane']
+
+def get_mosaic_coordinate(mosaic_image, mosaic_index, xc, yc, w, h, input_h, input_w):
+    # TODO update doc
+    # index0 to top left part of image
+    if mosaic_index == 0:
+        x1, y1, x2, y2 = max(xc - w, 0), max(yc - h, 0), xc, yc
+        small_coord = w - (x2 - x1), h - (y2 - y1), w, h
+    # index1 to top right part of image
+    elif mosaic_index == 1:
+        x1, y1, x2, y2 = xc, max(yc - h, 0), min(xc + w, input_w * 2), yc
+        small_coord = 0, h - (y2 - y1), min(w, x2 - x1), h
+    # index2 to bottom left part of image
+    elif mosaic_index == 2:
+        x1, y1, x2, y2 = max(xc - w, 0), yc, xc, min(input_h * 2, yc + h)
+        small_coord = w - (x2 - x1), 0, w, min(y2 - y1, h)
+    # index2 to bottom right part of image
+    elif mosaic_index == 3:
+        x1, y1, x2, y2 = xc, yc, min(xc + w, input_w * 2), min(input_h * 2, yc + h)  # noqa
+        small_coord = 0, 0, min(w, x2 - x1), min(y2 - y1, h)
+    return (x1, y1, x2, y2), small_coord
 
 def _mirror(image, boxes, prob=0.5): #the format of boexes must be xyxy
     _, width, _ = image.shape
@@ -382,7 +402,7 @@ class YoloDataset(Dataset):
 def yolo_dataset_collate(batch):
     images = []
     bboxes = []
-    for img, box in batch:
+    for (img, box) in batch:
         images.append(img)
         bboxes.append(box)
     images = torch.from_numpy(np.array(images)).type(torch.FloatTensor)
@@ -391,7 +411,7 @@ def yolo_dataset_collate(batch):
 
 
 class DotaDataset(Dataset):
-    def __init__(self, name, data_dir, img_size, num_classes=16, mosaic=True, mosaic_ratio = 0.7):
+    def __init__(self, name, data_dir, img_size, num_classes=16, mosaic=True, mosaic_ratio = 0.7, mixup_prob=0.5):
         super(DotaDataset, self).__init__()
         self.name = name
         self.data_dir = data_dir
@@ -412,7 +432,12 @@ class DotaDataset(Dataset):
         self.ids = [i for i in range(len(self.labels_file))]
         random.shuffle(self.ids)
         self.mosaic_ratio = mosaic_ratio
+        self.mixup_prob = mixup_prob
         self.epoch_now = -1
+        self.degrees=10.0
+        self.scale=(0.5, 1.5)
+        self.shear = 2.0
+        self.translate = 0.1
 
     def __len__(self):
         return self.imgs_num
@@ -455,52 +480,95 @@ class DotaDataset(Dataset):
         # self.draw(img, res)
         return img, res.copy()
 
+    def mixup(self, origin_img, origin_labels):
+        r = np.random.beta(32.0, 32.0)
+        HFLIP = random.uniform(0, 1) > 0.5
+        VFLIP = random.uniform(0, 1) > 0.5
+        cp_index = random.randint(0, self.__len__() - 1)
+        cp_img, cp_labels = self.pull_item(cp_index)
+        if cp_img.shape != origin_img.shape:
+            cp_img, scale, (padw, padh) = letterbox(cp_img)
+            cp_labels[:, 0:-1:2] = scale[1] * cp_labels[:, 0:-1:2]
+            cp_labels[:, 1:-1:2] = scale[0] * cp_labels[:, 1:-1:2]
+            cp_labels[:, 0:-1:2] += int(padw)
+            cp_labels[:, 1:-1:2] += int(padh)
+            # drawOneImg(cp_img, cp_labels)
+        width, height = cp_img.shape[0], cp_img.shape[1]
+
+        if HFLIP:  # horizontal flip
+            cp_img = cp_img[:, ::-1, :].copy()
+            cp_labels[:, 1:-1:2] = width - cp_labels[:, 1:-1:2]
+        if VFLIP:  # vertical flip
+            cp_img = cp_img[::-1, :, :].copy()
+            cp_labels[:, 2:-1:2] = height - cp_labels[:, 2:-1:2]
+
+        img = (origin_img * r + (1 - r) * cp_img).astype(np.uint8)
+        labels = np.concatenate((origin_labels, cp_labels), 0)
+        # draw(img, labels, origin_img, origin_labels,cp_img, cp_labels)
+        return img, labels
+
     def __getitem__(self, index):
-        img, target = self.pull_item(index)
-        img, target = self.postprocessing(img, target, index)
-        return img, target
+        if random.random() < self.mosaic_ratio:
+            mosaic_labels = []
+            input_h, input_w = self.img_size[0], self.img_size[1]
 
-    def postprocessing(self, image, targets,index, flip_prob=0.5, hsv_prob=1.0):
-        boxes = targets[:, :-1].copy()
-        labels = targets[:, -1].copy()
-        if not ((image.shape[0] == self.img_size[0]) and (image.shape[1] == self.img_size[1])):
-            image, scale, (dw, dh) = letterbox(image, self.img_size)
-            boxes = boxes.astype(np.float64)
-            boxes *= scale[0]
-            boxes[:, ::2] += dw
-            boxes[:, 1::2] += dh
-        image_o = image.copy()
-        height_o, width_o, _ = image_o.shape
+            yc = int(random.uniform(0.5 * input_h, 1.5 * input_h))
+            xc = int(random.uniform(0.5 * input_w, 1.5 * input_w))
 
-        if random.random() < hsv_prob:
-            image = augment_hsv(image)
-        #TODO : Mosaic and mixup
-        if self.name == 'train':
-            if random.random() < self.mosaic_ratio:
-                mosaic_labels = []
-                input_h, input_w = self.img_size[0], self.img_size[1]
-                yc = int(random.uniform(0.25 * input_h, 0.75 * input_h))
-                xc = int(random.uniform(0.25 * input_w, 0.75 * input_w))
-                indices = [index] + [random.randint(0, self.imgs_num - 1) for _ in range(3)]
+            indices = [index] + [random.randint(0, self.imgs_num - 1) for _ in range(3)]
 
+            for i_mosaic, index in enumerate(indices):
+                img, _labels = self.pull_item(index)
+                h0, w0 = img.shape[:2]
+                scale = min(1. * input_h / h0, 1. * input_w / w0)
 
-        height, width, _ = image.shape
-        boxes = xyxy2cxcywhab(boxes)
+                img = cv2.resize(
+                    img, (int(w0 * scale), int(h0 * scale)), interpolation=cv2.INTER_LINEAR
+                )
 
-        mask_b = np.minimum(boxes[:, 2], boxes[:, 3]) > 1
-        boxes_t = boxes[mask_b]
-        labels_t = labels[mask_b]
-        labels_t = np.expand_dims(labels_t, 1)
+                (h,w,c) = img.shape[:3]
+                if i_mosaic == 0:
+                    mosaic_img = np.full((input_h * 2, input_w * 2, c), 114, dtype=np.uint8)
+                (l_x1, l_y1, l_x2, l_y2), (s_x1, s_y1, s_x2, s_y2) = get_mosaic_coordinate(
+                    mosaic_img, i_mosaic, xc, yc, w, h, input_h, input_w
+                )
+                mosaic_img[l_y1:l_y2, l_x1: l_x2] = img[s_y1:s_y2, s_x1:s_x2]
+                padw, padh = l_x1 - s_x1, l_y1 - s_y1
+                labels = _labels.copy()
+                if _labels.size > 0:
+                    labels[:, [0,2,4,6]] = scale * labels[:, [0,2,4,6]] + padw
+                    labels[:, [1,3,5,7]] = scale * labels[:, [1,3,5,7]] + padh
+                mosaic_labels.append(labels)
+            if len(mosaic_labels):
+                mosaic_labels = np.concatenate(mosaic_labels, 0)
 
-        targets_t = np.hstack((boxes_t, labels_t))
-        image = image.transpose((2, 0, 1))  # from channel-last to channel-first
-        return image, targets_t
+            mosaic_img, mosaic_labels = random_affine(
+                mosaic_img,
+                mosaic_labels,
+                target_size=(input_w, input_h),
+                degrees=self.degrees,
+                translate=self.translate,
+                scales=self.scale,
+                shear=self.shear,
+                oriented=True
+            )
+            if random.random() < self.mixup_prob:
+                mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
+            return mosaic_img, mosaic_labels
 
-
+        else:
+            img, labels = self.pull_item(index)
+            img, scale, (padw, padh) = letterbox(img)
+            if len(labels) > 0:
+                labels[:, 0:-1:2] = scale[1] * labels[:, 0:-1:2]
+                labels[:, 1:-1:2] = scale[0] * labels[:, 1:-1:2]
+                labels[:, 0:-1:2] += int(padw)
+                labels[:, 1:-1:2] += int(padh)
+            return img, labels
 
 if __name__ == '__main__':
-    train_dataset = DotaDataset(name='train', data_dir='/home/yanggang/diskPoints/work2/DOTA_SPLIT', img_size=(1024,1024))
+    train_dataset = DotaDataset(name='train', data_dir='/home/yanggang/data/DOTA_SPLIT', img_size=(1024,1024))
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, collate_fn=yolo_dataset_collate, drop_last=True)
     for i, (imgs, targets) in enumerate(train_dataloader):
-        print(imgs.shape)
+        print(f"batch {i} : {imgs.shape}")
 

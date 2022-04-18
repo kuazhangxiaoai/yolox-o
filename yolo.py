@@ -8,7 +8,7 @@ import torch.nn as nn
 from PIL import ImageDraw, ImageFont
 
 from nets.yolo import YoloBody
-from utils.comment import cvtColor, get_classes, preprocess_input, resize_image
+from utils.common import cvtColor, get_classes, preprocess_input, resize_image
 from utils.utils_bbox import decode_outputs, non_max_suppression
 
 '''

@@ -2,7 +2,7 @@ import os
 import random
 import xml.etree.ElementTree as ET
 
-from utils.comment import get_classes
+from utils.common import get_classes
 
 #--------------------------------------------------------------------------------------------------------------------------------#
 #   annotation_mode用于指定该文件运行时计算的内容
