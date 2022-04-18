@@ -446,8 +446,8 @@ class DotaDataset(Dataset):
         self.mosaic_ratio = mosaic_ratio
         self.mixup_prob = mixup_prob
         self.epoch_now = -1
-        self.degrees=10.0
-        self.scale=(0.5, 1.5)
+        self.degrees=0.0
+        self.scale=(0.5, 0.5)
         self.shear = 2.0
         self.translate = 0.1
 
@@ -558,14 +558,14 @@ class DotaDataset(Dataset):
                 mosaic_img,
                 mosaic_labels,
                 target_size=(input_w, input_h),
-                degrees=0.0,
+                degrees=self.degrees,
                 translate=self.translate,
-                scales=(0.1, 2.0),
+                scales=self.scale,
                 shear=self.shear,
                 oriented=True
             )
-            #if random.random() < self.mixup_prob:
-            #    mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
+            if random.random() < self.mixup_prob:
+                mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
             drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic.png")
             return mosaic_img, mosaic_labels
 
