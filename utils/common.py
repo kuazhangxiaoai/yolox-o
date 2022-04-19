@@ -92,112 +92,77 @@ def mixup(im, labels, im2, labels2):
     labels = np.concatenate((labels, labels2), 0)
     return im, labels
 
-def get_aug_params(value, center=0):
-    if isinstance(value, float):
-        return random.uniform(center - value, center + value)
-    elif len(value) == 2:
-        return random.uniform(value[0], value[1])
-    else:
-        raise ValueError(
-            "Affine params should be either a sequence containing two values\
-             or single float values. Got {}".format(value)
-        )
+def poly_filter(polys, h, w):
+    x = polys[:, 0::2]
+    y = polys[:, 1::2]
+    x_max = np.amax(x, axis=1)
+    x_min = np.amin(x, axis=1)
+    y_max = np.amax(y, axis=1)
+    y_min = np.amin(y, axis=1)
+    xc, yc = (x_max + x_min) / 2.0, (y_max + y_min) / 2.0
+    keep_masks = (xc > 0) & (xc < w) & (yc > 0) & (yc < h)
+    return keep_masks
 
-def get_affine_matrix(
-    target_size,
-    degrees=10,
-    translate=0.1,
-    scales=0.1,
-    shear=10,
-):
-    twidth, theight = target_size
+def random_perspective(im, targets=(), degrees=10, translate=0.1, scale=0.1, shear=10, perspective=0.0, border=(0, 0)):
+    height = im.shape[0] + border[0] * 2
+    width  = im.shape[1] + border[1] * 2
+    C = np.eye(3)
+    C[0, 2] = -im.shape[1] / 2
+    C[1, 2] = -im.shape[0] / 2
 
-    # Rotation and Scale
-    angle = get_aug_params(degrees)
-    scale = get_aug_params(scales, center=1.0)
+    P = np.eye(3)
+    P[2, 0] = random.uniform(-perspective, perspective)
+    P[2, 1] = random.uniform(-perspective, perspective)
 
-    if scale <= 0.0:
-        raise ValueError("Argument scale should be positive")
+    R = np.eye(3)
+    a = random.uniform(-degrees, degrees)
 
-    R = cv2.getRotationMatrix2D(angle=angle, center=(0, 0), scale=scale)
+    s = random.uniform(1 - scale, 1 + scale)
 
-    M = np.ones([2, 3])
-    # Shear
-    shear_x = math.tan(get_aug_params(shear) * math.pi / 180)
-    shear_y = math.tan(get_aug_params(shear) * math.pi / 180)
+    R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0,0), scale=s)
 
-    M[0] = R[0] + shear_y * R[1]
-    M[1] = R[1] + shear_x * R[0]
+    S = np.eye(3)
+    S[0, 1] = math.tan(random.uniform(-shear, shear) * math.pi / 180)
+    S[1, 0] = math.tan(random.uniform(-shear, shear) * math.pi / 180)
 
-    # Translation
-    translation_x = get_aug_params(translate) * twidth  # x translation (pixels)
-    translation_y = get_aug_params(translate) * theight  # y translation (pixels)
+    T = np.eye(3)
+    T[0, 2] = random.uniform(0.5 - translate, 0.5 + translate) * width
+    T[1, 2] = random.uniform(0.5 - translate, 0.5 + translate) * height
 
-    M[0, 2] = translation_x
-    M[1, 2] = translation_y
+    M = T @ S @ R @ P @ C
+    if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():
+        if perspective:
+            im = cv2.warpPerspective(im, M, dsize=(width, height), borderValue=(114, 114, 114))
+        else:
+            im = cv2.warpAffine(im, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
 
-    return M, scale
+    n = len(targets)
+    if n :
+        xy = np.ones((n * 4, 3))
+        xy[:, :2] = targets[:, :-1].reshape(n * 4, 2)
+        xy = xy @ M.T
+        xy = (xy[:, :2] / xy[:, 2:3] if perspective else xy[:, :2]).reshape(n, 8)
 
-def apply_affine_to_orientedbboxes(targets, target_size, M, scale):
-    num_gts = len(targets)
-    corner_points = np.ones((4 * num_gts, 3))
-    corner_points[:,:2] = targets[:, :-1].reshape(4 * num_gts, 2) #x1y1, x2y2, x3y3,x4y4
-    corner_points = corner_points @ M.T
-    corner_points = corner_points.reshape(num_gts, 8)
-    corner_points[:, 0::2] = corner_points[:, 0::2]
-    corner_points[:, 1::2] = corner_points[:, 1::2]
-    targets[:, : -1] = corner_points
-    return targets
+    targets_mask = poly_filter(polys=xy, h=height, w=width)
+    targets[:, : -1] = xy
+    targets = targets[targets_mask]
+    return im, targets
 
-def apply_affine_to_bboxes(targets, target_size, M, scale):
-    num_gts = len(targets)
+def augment_hsv(img, hgain=5, sgain=30, vgain=30):
+    hsv_augs = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain]  # random gains
+    hsv_augs *= np.random.randint(0, 2, 3)  # random selection of h, s, v
+    hsv_augs = hsv_augs.astype(np.int16)
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.int16)
 
-    # warp corner points
-    twidth, theight = target_size
-    corner_points = np.ones((4 * num_gts, 3))
-    corner_points[:, :2] = targets[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(
-        4 * num_gts, 2
-    )  # x1y1, x2y2, x1y2, x2y1
-    corner_points = corner_points @ M.T  # apply affine transform
-    corner_points = corner_points.reshape(num_gts, 8)
+    img_hsv[..., 0] = (img_hsv[..., 0] + hsv_augs[0]) % 180
+    img_hsv[..., 1] = np.clip(img_hsv[..., 1] + hsv_augs[1], 0, 255)
+    img_hsv[..., 2] = np.clip(img_hsv[..., 2] + hsv_augs[2], 0, 255)
 
-    # create new boxes
-    corner_xs = corner_points[:, 0::2]
-    corner_ys = corner_points[:, 1::2]
-    new_bboxes = (
-        np.concatenate(
-            (corner_xs.min(1), corner_ys.min(1), corner_xs.max(1), corner_ys.max(1))
-        )
-        .reshape(4, num_gts)
-        .T
-    )
+    cv2.cvtColor(img_hsv.astype(img.dtype), cv2.COLOR_HSV2BGR, dst=img)  # no return needed
 
-    # clip boxes
-    new_bboxes[:, 0::2] = new_bboxes[:, 0::2].clip(0, twidth)
-    new_bboxes[:, 1::2] = new_bboxes[:, 1::2].clip(0, theight)
-
-    targets[:, :4] = new_bboxes
-
-    return targets
-
-def random_affine(
-    img,
-    targets=(),
-    target_size=(640, 640),
-    degrees=10,
-    translate=0.1,
-    scales=0.1,
-    shear=10,
-    oriented=False
-):
-    M, scale = get_affine_matrix(target_size, degrees, translate, scales, shear)
-
-    img = cv2.warpAffine(img, M, dsize=target_size, borderValue=(114, 114, 114))
-
-    # Transform label coordinates
-    if len(targets) and (oriented is False) > 0:
-        targets = apply_affine_to_bboxes(targets, target_size, M, scale)
-    elif len(targets) and (oriented):
-        targets = apply_affine_to_orientedbboxes(targets, target_size, M, scale)
-
-    return img, targets
+def _mirror(image, boxes, prob=0.5):
+    _, width, _ = image.shape
+    if random.random() < prob:
+        image = image[:, ::-1]
+        boxes[:, 0::2] = width - boxes[:, 2::-2]
+    return image, boxes

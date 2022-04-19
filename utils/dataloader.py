@@ -9,7 +9,7 @@ from PIL import Image
 from torch.utils.data.dataset import Dataset
 
 #from utils.utils import cvtColor, preprocess_input
-from utils.common import cvtColor, preprocess_input, letterbox, mixup, random_affine
+from utils.common import cvtColor, preprocess_input, letterbox, mixup,random_perspective
 from utils.utils_bbox import xyxy2cxcywhab
 from DOTA_devkit import dota_utils
 
@@ -446,9 +446,9 @@ class DotaDataset(Dataset):
         self.mosaic_ratio = mosaic_ratio
         self.mixup_prob = mixup_prob
         self.epoch_now = -1
-        self.degrees=0.0
-        self.scale=(0.5, 0.5)
-        self.shear = 2.0
+        self.degrees=180.0
+        self.scale=(1.0, 1.0)
+        self.shear = 0.0
         self.translate = 0.1
 
     def __len__(self):
@@ -542,20 +542,20 @@ class DotaDataset(Dataset):
                 mosaic_labels.append(labels)
             if len(mosaic_labels):
                 mosaic_labels = np.concatenate(mosaic_labels, 0)
-
-            mosaic_img, mosaic_labels = random_affine(
+            #drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic_beforeAffine.png")
+            mosaic_img, mosaic_labels = random_perspective(
                 mosaic_img,
                 mosaic_labels,
-                target_size=(input_w, input_h),
-                degrees=self.degrees,
-                translate=self.translate,
-                scales=self.scale,
-                shear=self.shear,
-                oriented=True
+                degrees=180.,
+                scale=0.5,
+                shear=0.0,
+                translate=0.1,
+                border=(-512, -512)
             )
             if random.random() < self.mixup_prob:
-                mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
-            drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic.png")
+                mosaic_img, mosaic_labels = mixup(mosaic_img, mosaic_labels)
+            #drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic.png")
+            mosaic_img, mosaic_labels = self.postprocessing(mosaic_img, mosaic_labels)
             return mosaic_img, mosaic_labels
 
         else:
@@ -566,11 +566,39 @@ class DotaDataset(Dataset):
                 labels[:, 1:-1:2] = scale[0] * labels[:, 1:-1:2]
                 labels[:, 0:-1:2] += int(padw)
                 labels[:, 1:-1:2] += int(padh)
+
+            img, labels = self.postprocessing(img, labels)
             return img, labels
+
+    def postprocessing(self, img, targets, hsv_prob=1.0, filp_prob=0.5, swap=(2, 0, 1)):
+        boxes = targets[:, :-1].copy()
+        labels= targets[:, -1].copy()
+        if not (img.shape[0] == self.img_size[0] or img.shape[1] == self.img_size[1]):
+            img, scale, (dw, dh) = letterbox(img, self.img_size)
+            boxes = boxes.astype(np.float64)
+            boxes *= scale[0]
+            boxes[:, ::2] += dw
+            boxes[:, 1::] += dh
+
+        image_t, boxes_t = _mirror(img, boxes, filp_prob)
+        if random.random() < hsv_prob:
+            augment_hsv(image_t)
+
+        #convert xyxy format to [c_x, c_y, w, h, alpha, beta]
+        boxes = xyxy2cxcywhab(boxes_t)
+        mask = np.minimum(boxes[:, 2], boxes[:,3]) > 1
+        boxes_t  = boxes[mask]
+        labels_t = labels[mask]
+        labels_t = np.expand_dims(labels_t, 1)
+        targets_t = np.hstack((boxes_t, labels_t))
+        image_t  = image_t.transpose(swap)
+        return image_t, targets_t
+
+
 
 if __name__ == '__main__':
     train_dataset = DotaDataset(name='train', data_dir='/home/yanggang/data/DOTA_SPLIT', img_size=(1024,1024))
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=yolo_dataset_collate, drop_last=True)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, collate_fn=yolo_dataset_collate, drop_last=True)
     for i, (imgs, targets) in enumerate(train_dataloader):
         print(f"batch {i} : {imgs.shape}")
 
