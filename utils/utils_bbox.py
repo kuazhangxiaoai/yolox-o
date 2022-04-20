@@ -197,3 +197,20 @@ def xyxy2cxcywhab(bboxes):
     new_boxes[:, 4] = xs[np.arange(boxes_num),y_min_index] - x_min                  #get alpha
     new_boxes[:, 5]  = y_max - ys[np.arange(boxes_num),x_max_index]                 # get beta
     return new_boxes
+
+def xywhab2xyxy(bboxes, device='cuda', numpy=False):
+    #bboxes (num, [cx, cy, w, h, alpha, beta]): described by format of xywhab
+    #return (num, [x1, y1, x2, y2, x3, y3, x4, y4]): described by format of xyxy
+    boxes_num = bboxes.shape[0]
+    new_boxes = torch.zeros([boxes_num, 8]).cuda() if device == 'cuda' else torch.zeros([boxes_num, 8])
+    if numpy:
+        new_boxes = np.zeros((boxes_num, 8))
+    new_boxes[:, 0] = bboxes[:, 0] - 0.5 * bboxes[:, 2] + bboxes[:, 4]
+    new_boxes[:, 1] = bboxes[:, 1] - 0.5 * bboxes[:, 3]
+    new_boxes[:, 2] = bboxes[:, 0] + 0.5 * bboxes[:, 2]
+    new_boxes[:, 3] = bboxes[:, 1] + 0.5 * bboxes[:, 3] - bboxes[:, 5]
+    new_boxes[:, 4] = bboxes[:, 0] + 0.5 * bboxes[:, 2] - bboxes[:, 4]
+    new_boxes[:, 5] = bboxes[:, 1] + 0.5 * bboxes[:, 3]
+    new_boxes[:, 6] = bboxes[:, 0] - 0.5 * bboxes[:, 2]
+    new_boxes[:, 7] = bboxes[:, 1] - 0.5 * bboxes[:, 3] + bboxes[:, 5]
+    return new_boxes

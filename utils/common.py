@@ -100,7 +100,8 @@ def poly_filter(polys, h, w):
     y_max = np.amax(y, axis=1)
     y_min = np.amin(y, axis=1)
     xc, yc = (x_max + x_min) / 2.0, (y_max + y_min) / 2.0
-    keep_masks = (xc > 0) & (xc < w) & (yc > 0) & (yc < h)
+    w0, h0 = (x_max - x_min), (y_max - y_min)
+    keep_masks = (xc > 0) & (xc < w) & (yc > 0) & (yc < h) & (w0 > 1) & (h0 > 1)
     return keep_masks
 
 def random_perspective(im, targets=(), degrees=10, translate=0.1, scale=0.1, shear=10, perspective=0.0, border=(0, 0)):
@@ -166,3 +167,4 @@ def _mirror(image, boxes, prob=0.5):
         image = image[:, ::-1]
         boxes[:, 0::2] = width - boxes[:, 2::-2]
     return image, boxes
+
