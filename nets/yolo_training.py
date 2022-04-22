@@ -154,6 +154,7 @@ class YOLOLoss(nn.Module):
         output              = output.flatten(start_dim=2).permute(0, 2, 1)
         output[..., :2]     = (output[..., :2] + grid.type_as(output)) * stride
         output[..., 2:4]    = torch.exp(output[..., 2:4]) * stride
+        output[..., 4:6]    = torch.exp(output[..., 4:6]) * stride
         return output, grid
 
     def get_losses(self, x_shifts, y_shifts, expanded_strides, labels, outputs):
