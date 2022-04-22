@@ -15,7 +15,7 @@ from nets.yolo import YoloBody
 from nets.yolo_training import (YOLOLoss, get_lr_scheduler, set_optimizer_lr,
                                 weights_init)
 from utils.callbacks import LossHistory
-from utils.dataloader import YoloDataset, yolo_dataset_collate
+from utils.dataloader import YoloDataset, DotaDataset, yolo_dataset_collate
 from utils.common import get_classes
 from utils.utils_fit import fit_one_epoch
 
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     #------------------------------------------------------#
     #   input_shape     输入的shape大小，一定要是32的倍数
     #------------------------------------------------------#
-    input_shape     = [640, 640]
+    input_shape     = [1024, 1024]
     #------------------------------------------------------#
     #   所使用的YoloX的版本。nano、tiny、s、m、l、x
     #------------------------------------------------------#
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     Init_Epoch          = 0
     Freeze_Epoch        = 50
-    Freeze_batch_size   = 16
+    Freeze_batch_size   = 8
     #------------------------------------------------------------------#
     #   解冻阶段训练参数
     #   此时模型的主干不被冻结了，特征提取网络会发生改变
@@ -156,8 +156,8 @@ if __name__ == "__main__":
     #   UnFreeze_Epoch          模型总共训练的epoch
     #   Unfreeze_batch_size     模型在解冻后的batch_size
     #------------------------------------------------------------------#
-    UnFreeze_Epoch      = 100
-    Unfreeze_batch_size = 8
+    UnFreeze_Epoch      = 150
+    Unfreeze_batch_size = 4
     #------------------------------------------------------------------#
     #   Freeze_Train    是否进行冻结训练
     #                   默认先冻结主干训练后解冻训练。
@@ -202,12 +202,6 @@ if __name__ == "__main__":
     #                   内存较小的电脑可以设置为2或者0  
     #------------------------------------------------------------------#
     num_workers         = 4
-
-    #----------------------------------------------------#
-    #   获得图片路径和标签
-    #----------------------------------------------------#
-    train_annotation_path   = '2007_train.txt'
-    val_annotation_path     = '2007_val.txt'
 
     #------------------------------------------------------#
     #   设置用到的显卡
@@ -284,15 +278,6 @@ if __name__ == "__main__":
             cudnn.benchmark = True
             model_train = model_train.cuda()
 
-    #---------------------------#
-    #   读取数据集对应的txt
-    #---------------------------#
-    with open(train_annotation_path, encoding='utf-8') as f:
-        train_lines = f.readlines()
-    with open(val_annotation_path, encoding='utf-8') as f:
-        val_lines   = f.readlines()
-    num_train   = len(train_lines)
-    num_val     = len(val_lines)
 
     #------------------------------------------------------#
     #   主干特征提取网络特征通用，冻结训练可以加快训练速度
@@ -351,18 +336,23 @@ if __name__ == "__main__":
         #---------------------------------------#
         #   判断每一个世代的长度
         #---------------------------------------#
-        epoch_step      = num_train // batch_size
-        epoch_step_val  = num_val // batch_size
+        #epoch_step      = num_train // batch_size
+        #epoch_step_val  = num_val // batch_size
         
-        if epoch_step == 0 or epoch_step_val == 0:
-            raise ValueError("数据集过小，无法继续进行训练，请扩充数据集。")
+        #if epoch_step == 0 or epoch_step_val == 0:
+        #    raise ValueError("数据集过小，无法继续进行训练，请扩充数据集。")
 
         #---------------------------------------#
         #   构建数据集加载器。
         #---------------------------------------#
-        train_dataset   = YoloDataset(train_lines, input_shape, num_classes, epoch_length = UnFreeze_Epoch, mosaic=mosaic, train = True)
-        val_dataset     = YoloDataset(val_lines, input_shape, num_classes, epoch_length = UnFreeze_Epoch, mosaic=False, train = False)
-        
+        train_dataset    = DotaDataset(name='train', data_dir='/home/yanggang/data/DOTA_SPLIT',img_size=input_shape)
+        val_dataset      = DotaDataset(name='val', data_dir='/home/yanggang/data/DOTA_SPLIT', img_size=input_shape)
+        num_train        = train_dataset.__len__()
+        num_val          = val_dataset.__len__()
+        epoch_step       = num_train // batch_size
+        epoch_step_val   = num_val // batch_size
+
+
         if distributed:
             train_sampler   = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True,)
             val_sampler     = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False,)

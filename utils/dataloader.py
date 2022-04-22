@@ -506,12 +506,12 @@ class DotaDataset(Dataset):
 
         img = (origin_img * r + (1 - r) * cp_img).astype(np.uint8)
         labels = np.concatenate((origin_labels, cp_labels), 0)
-        drawOneImg(cp_img, cp_labels, f"../draw/{cp_index}_mixup.png",color=(0,255,0))
+        #drawOneImg(cp_img, cp_labels, f"../draw/{cp_index}_mixup.png",color=(0,255,0))
         return img, labels
 
     def __getitem__(self, index):
         self.index = index
-        if random.random() < self.mosaic_ratio:
+        if (random.random() < self.mosaic_ratio) and (self.name == 'train'):
             mosaic_labels = []
             input_h, input_w = self.img_size[0], self.img_size[1]
 
@@ -544,7 +544,7 @@ class DotaDataset(Dataset):
                 mosaic_labels.append(labels)
             if len(mosaic_labels):
                 mosaic_labels = np.concatenate(mosaic_labels, 0)
-            drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic_beforeAffine.png")
+            #drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic_beforeAffine.png")
             mosaic_img, mosaic_labels = random_perspective(
                 mosaic_img,
                 mosaic_labels,
@@ -556,7 +556,7 @@ class DotaDataset(Dataset):
             )
             if random.random() < 1.0:
                 mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels)
-            drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic.png")
+            #drawOneImg(mosaic_img, mosaic_labels, save_path=f"../draw/{index}_mosaic.png")
             mosaic_img, mosaic_labels = self.postprocessing(mosaic_img, mosaic_labels)
             return mosaic_img, mosaic_labels
 
@@ -573,7 +573,6 @@ class DotaDataset(Dataset):
             return img, labels
 
     def postprocessing(self, img, targets, hsv_prob=1.0, filp_prob=0.5, swap=(2, 0, 1)):
-
         boxes = targets[:, :-1].copy()
         labels= targets[:, -1].copy()
         if not (img.shape[0] == self.img_size[0] or img.shape[1] == self.img_size[1]):
@@ -590,10 +589,10 @@ class DotaDataset(Dataset):
         #convert xyxy format to [c_x, c_y, w, h, alpha, beta]
         mask = poly_filter(boxes_t, img.shape[0], img.shape[1])
         boxes_t = boxes_t[mask]
-        drawOneImg(image_t.copy(), boxes_t, save_path=f'../draw/{self.index}_finnal0.png', withClass=False)
+        #drawOneImg(image_t.copy(), boxes_t, save_path=f'../draw/{self.index}_finnal0.png', withClass=False)
         boxes_t = xyxy2cxcywhab(boxes_t)
-        boxes_t = xywhab2xyxy(boxes_t, device='cpu', numpy=True)
-        drawOneImg(image_t.copy(), boxes_t, save_path=f'../draw/{self.index}_finnal1.png', withClass=False)
+        #boxes_t = xywhab2xyxy(boxes_t, device='cpu', numpy=True)
+        #drawOneImg(image_t.copy(), boxes_t, save_path=f'../draw/{self.index}_finnal1.png', withClass=False)
 
         #boxes_t  = boxes[mask]
         labels_t = labels[mask]

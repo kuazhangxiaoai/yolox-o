@@ -36,7 +36,7 @@ class YOLOXHead(nn.Module):
                 Conv(in_channels = int(256 * width), out_channels = int(256 * width), ksize = 3, stride = 1, act = act)
             ]))
             self.reg_preds.append(
-                nn.Conv2d(in_channels = int(256 * width), out_channels = 4, kernel_size = 1, stride = 1, padding = 0)
+                nn.Conv2d(in_channels = int(256 * width), out_channels = 6, kernel_size = 1, stride = 1, padding = 0)
             )
             self.obj_preds.append(
                 nn.Conv2d(in_channels = int(256 * width), out_channels = 1, kernel_size = 1, stride = 1, padding = 0)
