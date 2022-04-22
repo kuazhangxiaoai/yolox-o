@@ -158,17 +158,17 @@ class YOLOLoss(nn.Module):
 
     def get_losses(self, x_shifts, y_shifts, expanded_strides, labels, outputs):
         #-----------------------------------------------#
-        #   [batch, n_anchors_all, 4]
+        #   [batch, n_anchors_all, 6]
         #-----------------------------------------------#
-        bbox_preds  = outputs[:, :, :4]  
+        bbox_preds  = outputs[:, :, :6]
         #-----------------------------------------------#
         #   [batch, n_anchors_all, 1]
         #-----------------------------------------------#
-        obj_preds   = outputs[:, :, 4:5]
+        obj_preds   = outputs[:, :, 6:7]
         #-----------------------------------------------#
         #   [batch, n_anchors_all, n_cls]
         #-----------------------------------------------#
-        cls_preds   = outputs[:, :, 5:]  
+        cls_preds   = outputs[:, :, 7:]
 
         total_num_anchors   = outputs.shape[1]
         #-----------------------------------------------#
@@ -190,7 +190,7 @@ class YOLOLoss(nn.Module):
             num_gt          = len(labels[batch_idx])
             if num_gt == 0:
                 cls_target  = outputs.new_zeros((0, self.num_classes))
-                reg_target  = outputs.new_zeros((0, 4))
+                reg_target  = outputs.new_zeros((0, 6))
                 obj_target  = outputs.new_zeros((total_num_anchors, 1))
                 fg_mask     = outputs.new_zeros(total_num_anchors).bool()
             else:
@@ -201,8 +201,8 @@ class YOLOLoss(nn.Module):
                 #   cls_preds_per_image     [n_anchors_all, num_classes]
                 #   obj_preds_per_image     [n_anchors_all, 1]
                 #-----------------------------------------------#
-                gt_bboxes_per_image     = labels[batch_idx][..., :4].type_as(outputs)
-                gt_classes              = labels[batch_idx][..., 4].type_as(outputs)
+                gt_bboxes_per_image     = labels[batch_idx][..., :6].type_as(outputs)
+                gt_classes              = labels[batch_idx][..., -1].type_as(outputs)
                 bboxes_preds_per_image  = bbox_preds[batch_idx]
                 cls_preds_per_image     = cls_preds[batch_idx]
                 obj_preds_per_image     = obj_preds[batch_idx]
@@ -227,7 +227,7 @@ class YOLOLoss(nn.Module):
         fg_masks    = torch.cat(fg_masks, 0)
 
         num_fg      = max(num_fg, 1)
-        loss_iou    = (self.iou_loss(bbox_preds.view(-1, 4)[fg_masks], reg_targets)).sum()
+        loss_iou    = (self.iou_loss(bbox_preds.view(-1, 6)[fg_masks], reg_targets)).sum()
         loss_obj    = (self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets)).sum()
         loss_cls    = (self.bcewithlog_loss(cls_preds.view(-1, self.num_classes)[fg_masks], cls_targets)).sum()
         reg_weight  = 5.0
@@ -282,26 +282,26 @@ class YOLOLoss(nn.Module):
         return gt_matched_classes, fg_mask, pred_ious_this_matching, matched_gt_inds, num_fg
     
     def bboxes_iou(self, bboxes_a, bboxes_b, xyxy=True):
-        if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
+        if bboxes_a.shape[1] != 6 or bboxes_b.shape[1] != 6:
             raise IndexError
 
         if xyxy:
             tl = torch.max(bboxes_a[:, None, :2], bboxes_b[:, :2])
-            br = torch.min(bboxes_a[:, None, 2:], bboxes_b[:, 2:])
-            area_a = torch.prod(bboxes_a[:, 2:] - bboxes_a[:, :2], 1)
-            area_b = torch.prod(bboxes_b[:, 2:] - bboxes_b[:, :2], 1)
+            br = torch.min(bboxes_a[:, None, 2:4], bboxes_b[:, 2:4])
+            area_a = torch.prod(bboxes_a[:, 2:4] - bboxes_a[:, :2], 1)
+            area_b = torch.prod(bboxes_b[:, 2:4] - bboxes_b[:, :2], 1)
         else:
             tl = torch.max(
-                (bboxes_a[:, None, :2] - bboxes_a[:, None, 2:] / 2),
-                (bboxes_b[:, :2] - bboxes_b[:, 2:] / 2),
+                (bboxes_a[:, None, :2] - bboxes_a[:, None, 2:4] / 2),
+                (bboxes_b[:, :2] - bboxes_b[:, 2:4] / 2),
             )
             br = torch.min(
-                (bboxes_a[:, None, :2] + bboxes_a[:, None, 2:] / 2),
-                (bboxes_b[:, :2] + bboxes_b[:, 2:] / 2),
+                (bboxes_a[:, None, :2] + bboxes_a[:, None, 2:4] / 2),
+                (bboxes_b[:, :2] + bboxes_b[:, 2:4] / 2),
             )
 
-            area_a = torch.prod(bboxes_a[:, 2:], 1)
-            area_b = torch.prod(bboxes_b[:, 2:], 1)
+            area_a = torch.prod(bboxes_a[:, 2:4], 1)
+            area_b = torch.prod(bboxes_b[:, 2:4], 1)
         en = (tl < br).type(tl.type()).prod(dim=2)
         area_i = torch.prod(br - tl, 2) * en
         return area_i / (area_a[:, None] + area_b - area_i)
