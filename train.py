@@ -148,7 +148,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     Init_Epoch          = 0
     Freeze_Epoch        = 50
-    Freeze_batch_size   = 8
+    Freeze_batch_size   = 4
     #------------------------------------------------------------------#
     #   解冻阶段训练参数
     #   此时模型的主干不被冻结了，特征提取网络会发生改变
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     #                   开启后会加快数据读取速度，但是会占用更多内存
     #                   内存较小的电脑可以设置为2或者0  
     #------------------------------------------------------------------#
-    num_workers         = 4
+    num_workers         = 0
 
     #------------------------------------------------------#
     #   设置用到的显卡
@@ -345,8 +345,8 @@ if __name__ == "__main__":
         #---------------------------------------#
         #   构建数据集加载器。
         #---------------------------------------#
-        train_dataset    = DotaDataset(name='train', data_dir='/home/yanggang/data/DOTA_SPLIT',img_size=input_shape)
-        val_dataset      = DotaDataset(name='val', data_dir='/home/yanggang/data/DOTA_SPLIT', img_size=input_shape)
+        train_dataset    = DotaDataset(name='train', data_dir='/home/yanggang/diskPoints/work2/DOTA_SPLIT',img_size=input_shape)
+        val_dataset      = DotaDataset(name='val', data_dir='/home/yanggang/diskPoints/work2/DOTA_SPLIT', img_size=input_shape)
         num_train        = train_dataset.__len__()
         num_val          = val_dataset.__len__()
         epoch_step       = num_train // batch_size

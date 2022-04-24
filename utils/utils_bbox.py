@@ -194,8 +194,8 @@ def xyxy2cxcywhab(bboxes):
     new_boxes[:, 2], new_boxes[:, 3] = (x_max - x_min), (y_max - y_min)             # get width and height
     x_min_index, x_max_index = np.argmin(xs, axis=1), np.argmax(xs, axis=1)
     y_min_index, y_max_index = np.argmin(ys, axis=1), np.argmax(ys, axis=1)
-    new_boxes[:, 4] = xs[np.arange(boxes_num),y_min_index] - x_min                  #get alpha
-    new_boxes[:, 5]  = y_max - ys[np.arange(boxes_num),x_max_index]                 # get beta
+    new_boxes[:, 4] = (xs[np.arange(boxes_num),y_min_index] - x_min) / (x_max - x_min)                 #get alpha
+    new_boxes[:, 5] = (y_max - ys[np.arange(boxes_num),x_max_index]) / (y_max - y_min)                 # get beta
     return new_boxes
 
 def xywhab2xyxy(bboxes, device='cuda', numpy=False):

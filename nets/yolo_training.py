@@ -61,7 +61,8 @@ class OrientedIOUloss(nn.Module):
         super(OrientedIOUloss, self).__init__()
         self.reduction = reduction
         self.loss_type = loss_type
-        self.loss_mse  = nn.MSELoss()
+        self.loss_mse_alpha  = nn.MSELoss()
+        self.loss_mse_beta   = nn.MSELoss()
 
     def forward(self, pred, target):
         assert pred.shape[0] == target.shape[0]
@@ -83,8 +84,8 @@ class OrientedIOUloss(nn.Module):
         area_u = area_p + area_g - area_i
         iou = (area_i) / (area_u + 1e-16)
 
-        loss_alpha = self.loss_mse(pred[:, 4], target[:, 4])
-        loss_beta  = self.loss_mse(pred[:, 5], target[:, 5])
+        loss_alpha = self.loss_mse_alpha(pred[:, 4], target[:, 4])
+        loss_beta  = self.loss_mse_beta(pred[:, 5], target[:, 5])
         if self.loss_type == 'iou':
             loss = (1 - iou ** 2) + loss_alpha + loss_beta
         elif self.loss_type == 'giou':
@@ -153,8 +154,10 @@ class YOLOLoss(nn.Module):
 
         output              = output.flatten(start_dim=2).permute(0, 2, 1)
         output[..., :2]     = (output[..., :2] + grid.type_as(output)) * stride
+
         output[..., 2:4]    = torch.exp(output[..., 2:4]) * stride
-        output[..., 4:6]    = torch.exp(output[..., 4:6]) * stride
+        #output[..., 4:6]    = torch.sigmoid_(output[..., 4:6])
+
         return output, grid
 
     def get_losses(self, x_shifts, y_shifts, expanded_strides, labels, outputs):
@@ -395,8 +398,10 @@ class YOLOLoss(nn.Module):
             #------------------------------------------------------------#
             #   给每个真实框选取最小的动态k个点
             #------------------------------------------------------------#
+
             _, pos_idx = torch.topk(cost[gt_idx], k=dynamic_ks[gt_idx].item(), largest=False)
             matching_matrix[gt_idx][pos_idx] = 1.0
+
         del topk_ious, dynamic_ks, pos_idx
 
         #------------------------------------------------------------#
